@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-COZE_API_KEYconst DEFAULT_BASES = ['https://api.coze.com', 'https://api.coze.cn'];
+const DEFAULT_BASES = ['https://api.coze.com', 'https://api.coze.cn'];
 
 function normalizeEnvValue(value) {
   if (typeof value !== 'string') {
