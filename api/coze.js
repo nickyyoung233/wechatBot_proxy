@@ -13,14 +13,24 @@ function getCozeConfig() {
   const apiKeyRaw = normalizeEnvValue(process.env.COZE_API_KEY);
   const botId = normalizeEnvValue(process.env.COZE_BOT_ID);
   const cozeApiBase = normalizeEnvValue(process.env.COZE_API_BASE);
+  const pollIntervalRaw = Number.parseInt(normalizeEnvValue(process.env.COZE_POLL_INTERVAL_MS), 10);
+  const pollTimeoutRaw = Number.parseInt(normalizeEnvValue(process.env.COZE_POLL_TIMEOUT_MS), 10);
 
-  // 允许用户把 "Bearer xxx" 直接填进环境变量，统一清洗后再拼接 Authorization。
+  // 支持误填为 "Bearer xxx" 的情况，统一清洗。
   const apiKey = apiKeyRaw.replace(/^Bearer\s+/i, '').trim();
+  const pollIntervalMs = Number.isFinite(pollIntervalRaw) && pollIntervalRaw > 0
+    ? pollIntervalRaw
+    : 1500;
+  const pollTimeoutMs = Number.isFinite(pollTimeoutRaw) && pollTimeoutRaw > 0
+    ? pollTimeoutRaw
+    : 60000;
 
   return {
     apiKey,
     botId,
-    cozeApiBase
+    cozeApiBase,
+    pollIntervalMs,
+    pollTimeoutMs
   };
 }
 
@@ -42,6 +52,7 @@ function extractAnswerFromMessages(messages) {
 
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const msg = messages[i];
+
     if (msg?.role !== 'assistant') {
       continue;
     }
@@ -54,14 +65,13 @@ function extractAnswerFromMessages(messages) {
       continue;
     }
 
-    // Coze 某些消息会把结构化内容放在 JSON 字符串中，优先取 data 字段。
     try {
       const parsed = JSON.parse(rawContent);
       if (typeof parsed?.data === 'string' && parsed.data.trim()) {
         return parsed.data;
       }
     } catch {
-    // 非 JSON 文本直接返回
+      // 非 JSON 文本直接使用原文。
     }
 
     return rawContent;
@@ -70,7 +80,27 @@ function extractAnswerFromMessages(messages) {
   return '';
 }
 
-async function requestCoze(baseUrl, apiKey, botId, message, userId) {
+async function fetchChatAnswer(baseUrl, apiKey, conversationId, chatId) {
+  const messagesResp = await axios.get(`${baseUrl}/v3/chat/message/list`, {
+    params: {
+      conversation_id: conversationId,
+      chat_id: chatId
+    },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 10000
+  });
+
+  if (messagesResp.data?.code && messagesResp.data.code !== 0) {
+    throw new Error(`Coze message list failed: ${messagesResp.data.msg || messagesResp.data.code}`);
+  }
+
+  return extractAnswerFromMessages(messagesResp.data?.data);
+}
+
+async function requestCoze(baseUrl, apiKey, botId, message, userId, pollIntervalMs, pollTimeoutMs) {
   const startResp = await axios.post(
     `${baseUrl}/v3/chat`,
     {
@@ -104,13 +134,13 @@ async function requestCoze(baseUrl, apiKey, botId, message, userId) {
   const chatId = data.id || data.chat_id || startResp.data?.id;
   const conversationId = data.conversation_id || startResp.data?.conversation_id;
 
-  // 兼容少量直接返回消息的场景
   const directAnswer =
     extractAnswerFromMessages(data.messages) ||
     extractAnswerFromMessages(startResp.data?.messages) ||
     data.answer ||
     startResp.data?.answer ||
     '';
+
   if (directAnswer) {
     return directAnswer;
   }
@@ -119,9 +149,10 @@ async function requestCoze(baseUrl, apiKey, botId, message, userId) {
     throw new Error('Coze response missing chat_id or conversation_id');
   }
 
-  // 非流式模式下，轮询会话状态直到完成。
-  const maxPollTimes = 20;
-  for (let i = 0; i < maxPollTimes; i += 1) {
+  const deadline = Date.now() + pollTimeoutMs;
+  let lastStatus = 'created';
+
+  while (Date.now() < deadline) {
     const retrieveResp = await axios.get(`${baseUrl}/v3/chat/retrieve`, {
       params: {
         chat_id: chatId,
@@ -139,39 +170,37 @@ async function requestCoze(baseUrl, apiKey, botId, message, userId) {
     }
 
     const status = retrieveResp.data?.data?.status;
+    lastStatus = status || lastStatus;
     const lastError = retrieveResp.data?.data?.last_error;
 
     if (status === 'failed') {
       throw new Error(`Coze chat failed: ${lastError?.msg || 'unknown error'}`);
     }
 
+    if (status === 'requires_action') {
+      throw new Error('Coze chat requires tool outputs, current flow does not support it');
+    }
+
+    if (status === 'canceled') {
+      throw new Error('Coze chat canceled');
+    }
+
     if (status === 'completed') {
-      const messagesResp = await axios.get(`${baseUrl}/v3/chat/message/list`, {
-        params: {
-          conversation_id: conversationId,
-          chat_id: chatId
-        },
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-
-      if (messagesResp.data?.code && messagesResp.data.code !== 0) {
-        throw new Error(
-          `Coze message list failed: ${messagesResp.data.msg || messagesResp.data.code}`
-        );
-      }
-
-      const answer = extractAnswerFromMessages(messagesResp.data?.data);
+      const answer = await fetchChatAnswer(baseUrl, apiKey, conversationId, chatId);
       return answer || '暂无回复';
     }
 
-    await sleep(1000);
+    await sleep(pollIntervalMs);
   }
 
-  throw new Error('Coze chat timeout while waiting for completion');
+  const fallbackAnswer = await fetchChatAnswer(baseUrl, apiKey, conversationId, chatId).catch(() => '');
+  if (fallbackAnswer) {
+    return fallbackAnswer;
+  }
+
+  throw new Error(
+    `Coze chat timeout while waiting for completion (status=${lastStatus}, timeoutMs=${pollTimeoutMs})`
+  );
 }
 
 /**
@@ -182,7 +211,7 @@ async function requestCoze(baseUrl, apiKey, botId, message, userId) {
  */
 export async function askCoze(message, userId) {
   try {
-    const { apiKey, botId, cozeApiBase } = getCozeConfig();
+    const { apiKey, botId, cozeApiBase, pollIntervalMs, pollTimeoutMs } = getCozeConfig();
 
     if (!apiKey || !botId) {
       console.error('Missing Coze credentials');
@@ -194,13 +223,22 @@ export async function askCoze(message, userId) {
 
     for (const baseUrl of bases) {
       try {
-        return await requestCoze(baseUrl, apiKey, botId, message, userId);
+        return await requestCoze(
+          baseUrl,
+          apiKey,
+          botId,
+          message,
+          userId,
+          pollIntervalMs,
+          pollTimeoutMs
+        );
       } catch (error) {
         lastError = error;
-        // 404 通常是域名/路径版本不匹配，尝试下一个 base。
+
         if (error?.response?.status === 404) {
           continue;
         }
+
         throw error;
       }
     }
