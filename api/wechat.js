@@ -29,8 +29,7 @@ export function verifyWeChat(signature, timestamp, nonce) {
  */
 export async function parseWeChatMessage(xmlData) {
   try {
-    const parser = new parseStringPromise();
-    const result = await parser.parseStringPromise(xmlData);
+    const result = await parseStringPromise(xmlData);
 
     const msg = result.xml;
     return {
