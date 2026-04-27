@@ -2,6 +2,20 @@ import { verifyWeChat, parseWeChatMessage, createWeChatReply } from './wechat.js
 import { askCoze } from './coze.js';
 
 /**
+ * 从请求流读取原始 body（用于 text/xml 场景兜底）
+ * @param {import('http').IncomingMessage} req
+ * @returns {Promise<string>}
+ */
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+/**
  * 处理GET请求 - WeChat服务器验证
  */
 async function handleGet(req) {
@@ -34,7 +48,6 @@ async function handlePost(req) {
   try {
     const { signature, timestamp, nonce } = req.query;
 
-    // 验证签名
     if (!verifyWeChat(signature, timestamp, nonce)) {
       return {
         statusCode: 403,
@@ -42,19 +55,31 @@ async function handlePost(req) {
       };
     }
 
-    // 获取请求体
     let body = req.body;
+
     if (typeof body === 'string') {
-      body = body;
-    } else if (typeof body === 'object') {
-      body = JSON.stringify(body);
+      // 保持不变
+    } else if (Buffer.isBuffer(body)) {
+      body = body.toString('utf8');
+    } else if (body == null) {
+      body = await readRawBody(req);
+    } else {
+      return {
+        statusCode: 400,
+        body: 'Invalid request body type'
+      };
     }
 
-    // 解析WeChat消息
+    if (!body || !body.trim()) {
+      return {
+        statusCode: 400,
+        body: 'Empty request body'
+      };
+    }
+
     const message = await parseWeChatMessage(body);
     console.log('Received message:', message);
 
-    // 仅处理文本消息
     if (message.msgType !== 'text') {
       return {
         statusCode: 200,
@@ -63,10 +88,7 @@ async function handlePost(req) {
       };
     }
 
-    // 调用Coze API获取回复
     const aiResponse = await askCoze(message.content, message.fromUser);
-
-    // 生成WeChat XML回复
     const xmlReply = createWeChatReply(message.fromUser, message.toUser, aiResponse);
 
     return {

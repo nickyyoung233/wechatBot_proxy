@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { parseStringPromise, Builder } from 'xml2js';
+import { parseStringPromise } from 'xml2js';
 
 const WECHAT_TOKEN = process.env.WECHAT_TOKEN;
 
@@ -29,9 +29,13 @@ export function verifyWeChat(signature, timestamp, nonce) {
  */
 export async function parseWeChatMessage(xmlData) {
   try {
-    const result = await parseStringPromise(xmlData);
+    if (typeof xmlData !== 'string' || !xmlData.trim()) {
+      throw new Error('Invalid XML body');
+    }
 
-    const msg = result.xml;
+    const result = await parseStringPromise(xmlData);
+    const msg = result?.xml || {};
+
     return {
       fromUser: msg.FromUserName?.[0] || '',
       toUser: msg.ToUserName?.[0] || '',
