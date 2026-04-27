@@ -1,14 +1,32 @@
 import axios from 'axios';
 
-const API_KEY = process.env.COZE_API_KEY;
-const BOT_ID = process.env.COZE_BOT_ID;
-const COZE_API_BASE = process.env.COZE_API_BASE;
+COZE_API_KEYconst DEFAULT_BASES = ['https://api.coze.com', 'https://api.coze.cn'];
 
-const DEFAULT_BASES = ['https://api.coze.com', 'https://api.coze.cn'];
+function normalizeEnvValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim().replace(/^['"]|['"]$/g, '');
+}
 
-function getCandidateBases() {
-  if (COZE_API_BASE && COZE_API_BASE.trim()) {
-    return [COZE_API_BASE.trim().replace(/\/$/, '')];
+function getCozeConfig() {
+  const apiKeyRaw = normalizeEnvValue(process.env.COZE_API_KEY);
+  const botId = normalizeEnvValue(process.env.COZE_BOT_ID);
+  const cozeApiBase = normalizeEnvValue(process.env.COZE_API_BASE);
+
+  // 允许用户把 "Bearer xxx" 直接填进环境变量，统一清洗后再拼接 Authorization。
+  const apiKey = apiKeyRaw.replace(/^Bearer\s+/i, '').trim();
+
+  return {
+    apiKey,
+    botId,
+    cozeApiBase
+  };
+}
+
+function getCandidateBases(cozeApiBase) {
+  if (cozeApiBase) {
+    return [cozeApiBase.replace(/\/$/, '')];
   }
   return DEFAULT_BASES;
 }
@@ -52,11 +70,11 @@ function extractAnswerFromMessages(messages) {
   return '';
 }
 
-async function requestCoze(baseUrl, message, userId) {
+async function requestCoze(baseUrl, apiKey, botId, message, userId) {
   const startResp = await axios.post(
     `${baseUrl}/v3/chat`,
     {
-      bot_id: BOT_ID,
+      bot_id: botId,
       user_id: userId || 'default_user',
       stream: false,
       auto_save_history: true,
@@ -71,7 +89,7 @@ async function requestCoze(baseUrl, message, userId) {
     },
     {
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       timeout: 30000
@@ -110,7 +128,7 @@ async function requestCoze(baseUrl, message, userId) {
         conversation_id: conversationId
       },
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       timeout: 10000
@@ -134,7 +152,7 @@ async function requestCoze(baseUrl, message, userId) {
           chat_id: chatId
         },
         headers: {
-          Authorization: `Bearer ${API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000
@@ -164,17 +182,19 @@ async function requestCoze(baseUrl, message, userId) {
  */
 export async function askCoze(message, userId) {
   try {
-    if (!API_KEY || !BOT_ID) {
+    const { apiKey, botId, cozeApiBase } = getCozeConfig();
+
+    if (!apiKey || !botId) {
       console.error('Missing Coze credentials');
       return '抱歉，服务暂时不可用。';
     }
 
-    const bases = getCandidateBases();
+    const bases = getCandidateBases(cozeApiBase);
     let lastError;
 
     for (const baseUrl of bases) {
       try {
-        return await requestCoze(baseUrl, message, userId);
+        return await requestCoze(baseUrl, apiKey, botId, message, userId);
       } catch (error) {
         lastError = error;
         // 404 通常是域名/路径版本不匹配，尝试下一个 base。
