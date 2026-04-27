@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.js"
+    }
+  ],
+  "env": {
+    "WECHAT_TOKEN": "@wechat_token",
+    "WECHAT_APPID": "@wechat_appid",
+    "WECHAT_APPSECRET": "@wechat_appsecret",
+    "COZE_API_KEY": "@coze_api_key",
+    "COZE_BOT_ID": "@coze_bot_id"
+  }
+}

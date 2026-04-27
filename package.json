@@ -1,0 +1,24 @@
+{
+  "name": "wechat-coze-proxy",
+  "version": "1.0.0",
+  "description": "WeChat public account proxy service powered by Coze",
+  "main": "api/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --loader dotenv/config api/index.js",
+    "start": "node api/index.js"
+  },
+  "keywords": [
+    "wechat",
+    "coze",
+    "proxy",
+    "vercel"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "xml2js": "^0.6.2"
+  }
+}
