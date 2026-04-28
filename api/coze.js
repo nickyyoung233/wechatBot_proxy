@@ -50,34 +50,33 @@ function extractAnswerFromMessages(messages) {
     return '';
   }
 
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const msg = messages[i];
+  // 取第一条消息
+  const msg = messages[0];
 
-    if (msg?.role !== 'assistant') {
-      continue;
-    }
-    if (msg?.type && msg.type !== 'answer') {
-      continue;
-    }
-
-    const rawContent = typeof msg.content === 'string' ? msg.content : '';
-    if (!rawContent) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(rawContent);
-      if (typeof parsed?.data === 'string' && parsed.data.trim()) {
-        return parsed.data;
-      }
-    } catch {
-      // 非 JSON 文本直接使用原文。
-    }
-
-    return rawContent;
+  if (msg?.role !== 'assistant') {
+    return '';
   }
 
-  return '';
+  const rawContent = typeof msg.content === 'string' ? msg.content : '';
+  if (!rawContent) {
+    return '';
+  }
+
+  let content = rawContent;
+
+  // 尝试解析 JSON，获取 data 字段
+  try {
+    const parsed = JSON.parse(rawContent);
+    if (typeof parsed?.data === 'string' && parsed.data.trim()) {
+      content = parsed.data;
+    }
+  } catch {
+    // 非 JSON 文本直接使用原文
+  }
+
+  // 按 \n 分割，用 '---' 作为段落分隔符格式处理
+  const segments = content.split('\n').filter(line => line.trim());
+  return segments.join('\n---\n');
 }
 
 async function fetchChatAnswer(baseUrl, apiKey, conversationId, chatId) {
@@ -122,7 +121,7 @@ async function requestCoze(baseUrl, apiKey, botId, message, userId, pollInterval
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 30000
+      timeout: 10000
     }
   );
 
