@@ -50,14 +50,10 @@ function extractAnswerFromMessages(messages) {
     return '';
   }
 
-  // 取第一条消息
-  const msg = messages[0];
-
-  if (msg?.role !== 'assistant') {
-    return '';
-  }
-
-  const rawContent = typeof msg.content === 'string' ? msg.content : '';
+  const msg = messages.find(
+    (item) => item?.role === 'assistant' && item?.type === 'answer'
+  );
+  const rawContent = typeof msg?.content === 'string' ? msg.content : '';
   if (!rawContent) {
     return '';
   }

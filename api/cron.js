@@ -12,12 +12,16 @@ import { pushWeChatMessage } from './wechatPush.js';
  */
 export default async function handler(req, res) {
   const isForced = req.query.force === '1';
+  const nowIso = new Date().toISOString();
+
+  console.log(`[Cron] Incoming request at ${nowIso}, isForced=${isForced}, hasAuthHeader=${Boolean(req.headers.authorization)}`);
 
   if (!isForced) {
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {
       const authHeader = req.headers.authorization;
       if (authHeader !== `Bearer ${cronSecret}`) {
+        console.warn('[Cron] Unauthorized request: missing or invalid Authorization header');
         return res.status(401).json({ error: 'Unauthorized' });
       }
     }
