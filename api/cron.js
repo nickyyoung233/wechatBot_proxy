@@ -23,23 +23,6 @@ export default async function handler(req, res) {
     }
   }
 
-  const scheduledHour = parseInt(process.env.SCHEDULED_HOUR_UTC ?? '10', 10);
-
-  if (Number.isNaN(scheduledHour) || scheduledHour < 0 || scheduledHour > 23) {
-    return res.status(500).json({
-    error: 'Invalid SCHEDULED_HOUR_UTC'
-  });
-}
-
-  const nowHour = new Date().getUTCHours();
-
-  // Hobby 计划下 cron 触发时间有漂移，分钟不做硬匹配
-  if (!isForced && nowHour !== scheduledHour) {
-    return res.status(200).json({
-    message: `Skipped. Current UTC hour: ${String(nowHour).padStart(2, '0')}, scheduled hour: ${String(scheduledHour).padStart(2, '0')}`
-  });
-}
-
   const openid = process.env.WECHAT_PUSH_OPENID;
   if (!openid) {
     console.error('WECHAT_PUSH_OPENID is not set');
