@@ -75,8 +75,8 @@ function extractAnswerFromMessages(messages) {
   }
 
   // 按 \n 分割，用 '---' 作为段落分隔符格式处理
-  const segments = content.split('\n').filter(line => line.trim());
-  return segments;
+  const segments = content.split('\n').filter((line) => line.trim());
+  return segments.join('\n');
 }
 
 async function fetchChatAnswer(baseUrl, apiKey, conversationId, chatId) {

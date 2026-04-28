@@ -59,8 +59,15 @@ export async function pushWeChatMessage(openid, content) {
     throw new Error('WECHAT_PUSH_OPENID not configured');
   }
 
+  const normalizedContent = typeof content === 'string'
+    ? content.trim()
+    : String(content ?? '').trim();
+  if (!normalizedContent) {
+    throw new Error('Empty message content from Coze');
+  }
+
   const accessToken = await getAccessToken();
-  const chunks = splitMessage(content);
+  const chunks = splitMessage(normalizedContent);
 
   for (const chunk of chunks) {
     const response = await axios.post(
