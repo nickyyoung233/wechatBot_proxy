@@ -6,6 +6,9 @@ WeChat 公众号代理服务，通过 Coze AI Bot 提供智能回复
 
 - ✅ 微信公众号消息接收与验证
 - ✅ 接入 Coze AI Bot 提供智能回复
+- ✅ 定时推送功能（Vercel Cron）
+- ✅ 微信客服消息推送（支持分段发送）
+- ✅ 智能响应格式处理（段落分隔符）
 - ✅ 部署在 Vercel Serverless 平台
 - ✅ 最小化实现，快速上手
 
@@ -55,6 +58,12 @@ npm run dev
 
 服务将在 `http://localhost:3000` 启动
 
+### 4. 本地测试
+
+```bash
+node test.js
+```
+
 ## 部署到 Vercel
 
 ### 1. 推送到 GitHub
@@ -73,11 +82,22 @@ git push origin main
 
 在 Vercel 项目设置中，添加以下环境变量：
 
-- `WECHAT_TOKEN`
-- `WECHAT_APPID`
-- `WECHAT_APPSECRET`
-- `COZE_API_KEY`
-- `COZE_BOT_ID`
+**必需：**
+- `WECHAT_TOKEN` - 微信服务器验证令牌
+- `WECHAT_APPID` - 微信公众号 AppID
+- `WECHAT_APPSECRET` - 微信公众号密钥
+- `COZE_API_KEY` - Coze API 密钥
+- `COZE_BOT_ID` - Coze Bot ID
+
+**可选（定时推送）：**
+- `WECHAT_PUSH_OPENID` - 推送目标用户 OpenID
+- `CRON_PROMPT` - 定时任务触发词
+- `CRON_SECRET` - Cron 请求鉴权密钥
+
+**可选（Coze 性能调优）：**
+- `COZE_API_BASE` - Coze API 基础 URL（默认 https://api.coze.com）
+- `COZE_POLL_INTERVAL_MS` - 轮询间隔（默认 1500ms）
+- `COZE_POLL_TIMEOUT_MS` - 轮询超时（默认 60000ms）
 
 ### 4. 配置 WeChat 公众号
 
@@ -94,10 +114,14 @@ git push origin main
 ├── api/
 │   ├── index.js          # Vercel serverless 入口点
 │   ├── wechat.js         # 微信消息处理、验证
-│   └── coze.js           # Coze API 调用
+│   ├── coze.js           # Coze API 调用（v3 API with polling）
+│   ├── wechatPush.js     # 微信客服消息推送
+│   └── cron.js           # 定时任务处理（Vercel Cron）
 ├── package.json          # 项目依赖配置
-├── vercel.json           # Vercel 部署配置
+├── vercel.json           # Vercel 部署配置（Cron 调度）
 ├── .env.example          # 环境变量示例
+├── QUICKSTART.md         # 快速开始指南
+├── DEPLOYMENT.md         # 完整部署文档
 └── README.md
 ```
 
@@ -138,16 +162,32 @@ git push origin main
 
 - 检查 `WECHAT_TOKEN` 是否与微信公众平台中设置的一致
 - 确保 URL 正确且可公开访问
+- 确保服务器配置中消息加密方式与代码兼容
 
 ### 2. 没有收到 Coze 回复
 
 - 检查 `COZE_API_KEY` 和 `COZE_BOT_ID` 是否正确
 - 查看 Vercel 日志了解具体错误信息
+- 若出现 404，自动尝试备用 API 域名（.com → .cn）
 
 ### 3. 消息解析错误
 
 - 确保微信公众号使用的是文本消息
 - 检查 XML 编码是否为 UTF-8
+- 检查 POST 请求体是否正确传递
+
+### 4. 定时推送不工作
+
+- 检查 Vercel Cron Jobs 是否有历史执行记录
+- 确保环境变量 `WECHAT_PUSH_OPENID` 已配置
+- 确认 `CRON_SECRET` 与 vercel.json 中的配置一致
+- Hobby 套餐 Cron 有 ±1 小时的弹性时间窗口
+
+### 5. 推送消息出现 44004 错误
+
+- 确保推送内容非空
+- 检查目标 OpenID 在 48 小时内与公众号有过互动
+- 查看 Coze 是否正常返回回复内容
 
 ## 许可证
 
