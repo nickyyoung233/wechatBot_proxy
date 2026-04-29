@@ -1,10 +1,10 @@
 # wechatBot_proxy
 
-WeChat 公众号代理服务，通过 Coze AI Bot 提供智能回复
+一个 每日定时推送定制化消息的智能代理服务： 基于 Coze AI Bot做智能化Agent，通过WeChat测试公众号进行推送， 部署在vercel上执行定时调度
 
 ## 功能特性
 
-- ✅ 微信公众号消息接收与验证
+- ✅ 微信公众号（个人测试版）消息接收与验证
 - ✅ 接入 Coze AI Bot 提供智能回复
 - ✅ 定时推送功能（Vercel Cron）
 - ✅ 微信客服消息推送（支持分段发送）
@@ -16,7 +16,9 @@ WeChat 公众号代理服务，通过 Coze AI Bot 提供智能回复
 
 - Node.js 18+
 - WeChat 公众号（需要获取 Token、AppID、AppSecret）
-- Coze 账户（需要获取 API Key 和 Bot ID）
+- Coze 账户（API Key， Bot ID）
+   - API Key: 该令牌需要支持chat和messageList权限
+   - Bot：一个配置检索功能的agent
 - Vercel 账户（用于部署）
 
 ## 本地开发
