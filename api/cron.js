@@ -13,15 +13,39 @@ import { pushWeChatMessage } from './wechatPush.js';
 export default async function handler(req, res) {
   const isForced = req.query.force === '1';
   const nowIso = new Date().toISOString();
+  const userAgent = req.headers['user-agent'] || '';
+  const vercelId = req.headers['x-vercel-id'] || '';
+  const hasAuthHeader = Boolean(req.headers.authorization);
+  const source = isForced
+    ? 'manual-force'
+    : userAgent.toLowerCase().includes('vercel')
+      ? 'vercel-cron-like'
+      : 'external-request';
 
-  console.log(`[Cron] Incoming request at ${nowIso}, isForced=${isForced}, hasAuthHeader=${Boolean(req.headers.authorization)}`);
+  console.log('[Cron] Incoming request', {
+    nowIso,
+    source,
+    isForced,
+    path: req.url,
+    query: req.query,
+    hasAuthHeader,
+    userAgent,
+    vercelId
+  });
 
   if (!isForced) {
     const cronSecret = process.env.CRON_SECRET;
     if (cronSecret) {
       const authHeader = req.headers.authorization;
       if (authHeader !== `Bearer ${cronSecret}`) {
-        console.warn('[Cron] Unauthorized request: missing or invalid Authorization header');
+        console.warn('[Cron] Unauthorized request', {
+          nowIso,
+          source,
+          path: req.url,
+          hasAuthHeader,
+          userAgent,
+          vercelId
+        });
         return res.status(401).json({ error: 'Unauthorized' });
       }
     }
