@@ -1,10 +1,7 @@
 import axios from 'axios';
 
 const WECHAT_TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token';
-const WECHAT_SEND_URL = 'https://api.weixin.qq.com/cgi-bin/message/custom/send';
-
-// 微信客服消息文本最大长度
-const MAX_MSG_LENGTH = 2000;
+const WECHAT_TEMPLATE_SEND_URL = 'https://api.weixin.qq.com/cgi-bin/message/template/send';
 
 /**
  * 获取微信 access_token
@@ -34,22 +31,65 @@ async function getAccessToken() {
   return response.data.access_token;
 }
 
-/**
- * 将长文本拆分为多段（WeChat 单条消息上限 2000 字）
- * @param {string} text
- * @returns {string[]}
- */
-function splitMessage(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += MAX_MSG_LENGTH) {
-    chunks.push(text.slice(i, i + MAX_MSG_LENGTH));
+function truncateText(text, maxLength) {
+  if (text.length <= maxLength) {
+    return text;
   }
-  return chunks;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function buildTemplatePayload(openid, content) {
+  const templateId = process.env.WECHAT_TEMPLATE_ID;
+  const templateUrl = process.env.WECHAT_TEMPLATE_URL;
+
+  const keyTitle = process.env.WECHAT_TEMPLATE_KEY_TITLE || 'first';
+  const keyContent = process.env.WECHAT_TEMPLATE_KEY_CONTENT || 'keyword1';
+  const keyTime = process.env.WECHAT_TEMPLATE_KEY_TIME || 'keyword2';
+  const keyRemark = process.env.WECHAT_TEMPLATE_KEY_REMARK || 'remark';
+
+  const title = process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
+  const remark = process.env.WECHAT_TEMPLATE_REMARK || '点击查看详情，回复消息可继续对话。';
+  const nowText = new Date().toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour12: false
+  });
+
+  if (!templateId) {
+    throw new Error('WECHAT_TEMPLATE_ID not configured');
+  }
+  if (!keyContent) {
+    throw new Error('WECHAT_TEMPLATE_KEY_CONTENT not configured');
+  }
+
+  const data = {
+    [keyContent]: { value: truncateText(content, 500) }
+  };
+
+  if (keyTitle) {
+    data[keyTitle] = { value: truncateText(title, 120) };
+  }
+  if (keyTime) {
+    data[keyTime] = { value: nowText };
+  }
+  if (keyRemark) {
+    data[keyRemark] = { value: truncateText(remark, 200) };
+  }
+
+  const payload = {
+    touser: openid,
+    template_id: templateId,
+    data
+  };
+
+  if (templateUrl) {
+    payload.url = templateUrl;
+  }
+
+  return payload;
 }
 
 /**
- * 通过微信客服消息接口推送文本到指定用户
- * 注意：目标用户需在 48 小时内与公众号有过互动（发送过消息）
+ * 通过微信公众号模板消息接口推送文本到指定用户
  * @param {string} openid - 目标用户的 OpenID
  * @param {string} content - 消息内容
  * @returns {Promise<void>}
@@ -67,24 +107,17 @@ export async function pushWeChatMessage(openid, content) {
   }
 
   const accessToken = await getAccessToken();
-  const chunks = splitMessage(normalizedContent);
 
-  for (const chunk of chunks) {
-    const response = await axios.post(
-      `${WECHAT_SEND_URL}?access_token=${accessToken}`,
-      {
-        touser: openid,
-        msgtype: 'text',
-        text: { content: chunk }
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
-      }
-    );
-
-    if (response.data.errcode && response.data.errcode !== 0) {
-      throw new Error(`WeChat push error [${response.data.errcode}]: ${response.data.errmsg}`);
+  const response = await axios.post(
+    `${WECHAT_TEMPLATE_SEND_URL}?access_token=${accessToken}`,
+    buildTemplatePayload(openid, normalizedContent),
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
     }
+  );
+
+  if (response.data.errcode && response.data.errcode !== 0) {
+    throw new Error(`WeChat template push error [${response.data.errcode}]: ${response.data.errmsg}`);
   }
 }
