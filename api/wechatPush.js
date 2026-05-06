@@ -3,17 +3,26 @@ import axios from 'axios';
 const WECHAT_TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token';
 const WECHAT_TEMPLATE_SEND_URL = 'https://api.weixin.qq.com/cgi-bin/message/template/send';
 
+function isMissingEnv(name) {
+  const value = process.env[name];
+  return typeof value !== 'string' || !value.trim();
+}
+
+function assertRequiredEnv(names, scene) {
+  const missing = names.filter(isMissingEnv);
+  if (missing.length > 0) {
+    throw new Error(`[${scene}] Missing required env: ${missing.join(', ')}`);
+  }
+}
+
 /**
  * 获取微信 access_token
  * @returns {Promise<string>}
  */
 async function getAccessToken() {
+  assertRequiredEnv(['WECHAT_APPID', 'WECHAT_APPSECRET'], 'wechat-token');
   const appid = process.env.WECHAT_APPID;
   const secret = process.env.WECHAT_APPSECRET;
-
-  if (!appid || !secret) {
-    throw new Error('WECHAT_APPID or WECHAT_APPSECRET not configured');
-  }
 
   const response = await axios.get(WECHAT_TOKEN_URL, {
     params: {
@@ -39,6 +48,8 @@ function truncateText(text, maxLength) {
 }
 
 function buildTemplatePayload(openid, content) {
+  assertRequiredEnv(['WECHAT_TEMPLATE_ID'], 'wechat-template');
+
   const templateId = process.env.WECHAT_TEMPLATE_ID;
   const templateUrl = process.env.WECHAT_TEMPLATE_URL;
 
@@ -53,13 +64,6 @@ function buildTemplatePayload(openid, content) {
     timeZone: 'Asia/Shanghai',
     hour12: false
   });
-
-  if (!templateId) {
-    throw new Error('WECHAT_TEMPLATE_ID not configured');
-  }
-  if (!keyContent) {
-    throw new Error('WECHAT_TEMPLATE_KEY_CONTENT not configured');
-  }
 
   const data = {
     [keyContent]: { value: truncateText(content, 500) }
