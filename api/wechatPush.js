@@ -65,16 +65,12 @@ function parseNewsItems(content) {
   return items;
 }
 
-function buildDetailUrl(item) {
+function buildDetailUrl(content) {
   const baseUrl = process.env.BASE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
   if (!baseUrl) return '';
   try {
-    const encoded = Buffer.from(JSON.stringify({
-      title: item.title,
-      core: item.core,
-      link: item.link
-    })).toString('base64url');
+    const encoded = Buffer.from(JSON.stringify({ content })).toString('base64url');
     return `${baseUrl}/api/detail?d=${encoded}`;
   } catch {
     return '';
@@ -180,44 +176,35 @@ export async function pushWeChatMessages(openid, content) {
   const items = parseNewsItems(normalizedContent);
   console.log(`[WechatPush] Parsed ${items.length} news items`);
 
-  // 解析失败时降级为单条发送
-  if (items.length === 0) {
-    console.warn('[WechatPush] No items parsed, falling back to single message');
-    return pushWeChatMessage(openid, normalizedContent);
-  }
-
   const accessToken = await getAccessToken();
   const baseTitle = process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
-  const total = items.length;
+  const detailUrl = buildDetailUrl(normalizedContent);
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    // keyword1 只放核心描述，first 字段放序号+文章标题
-    const msgContent = item.core;
-    const titleOverride = `(${i + 1}/${total}) ${item.title}`;
-    const detailUrl = buildDetailUrl(item);
-
-    const payload = buildTemplatePayload(openid, msgContent, {
-      itemUrl: detailUrl || undefined,
-      titleOverride
-    });
-
-    const response = await axios.post(
-      `${WECHAT_TEMPLATE_SEND_URL}?access_token=${accessToken}`,
-      payload,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
-      }
-    );
-
-    if (response.data.errcode && response.data.errcode !== 0) {
-      throw new Error(`WeChat template push error [${response.data.errcode}]: ${response.data.errmsg} (item ${i + 1})`);
+  let msgContent = '点击消息查看详情页，内含完整资讯内容。';
+  if (items.length > 0) {
+    const previews = items.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    msgContent = previews.join('\n');
+    if (items.length > 3) {
+      msgContent += `\n......共 ${items.length} 条`;
     }
+  }
 
-    // 避免触发微信接口频率限制
-    if (i < items.length - 1) {
-      await new Promise(r => setTimeout(r, 500));
+  const titleOverride = `${baseTitle} (${items.length || 1}条)`;
+  const payload = buildTemplatePayload(openid, msgContent, {
+    itemUrl: detailUrl || undefined,
+    titleOverride
+  });
+
+  const response = await axios.post(
+    `${WECHAT_TEMPLATE_SEND_URL}?access_token=${accessToken}`,
+    payload,
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
     }
+  );
+
+  if (response.data.errcode && response.data.errcode !== 0) {
+    throw new Error(`WeChat template push error [${response.data.errcode}]: ${response.data.errmsg}`);
   }
 }

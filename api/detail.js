@@ -1,21 +1,27 @@
 export default function handler(req, res) {
   const raw = req.query.d || '';
-  let title = '', core = '', link = '';
+  let content = '';
 
   if (raw) {
     try {
       const decoded = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
-      title = decoded.title || '';
-      core = decoded.core || '';
-      link = decoded.link || '';
+      if (typeof decoded.content === 'string') {
+        content = decoded.content;
+      } else {
+        const title = decoded.title || '';
+        const core = decoded.core || '';
+        const link = decoded.link || '';
+        if (title || core || link) {
+          content = `标题：${title}\n核心：${core}${link ? `\n链接：${link}` : ''}`;
+        }
+      }
     } catch {
       // 解码失败则显示空页面
     }
   }
 
-  const linkHtml = link
-    ? `<a class="link" href="${escapeHtml(link)}" target="_blank">查看原文 →</a>`
-    : '';
+  const items = parseNewsItems(content);
+  const itemsHtml = renderItems(items, content);
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -32,13 +38,16 @@ export default function handler(req, res) {
       min-height: 100vh;
       padding: 24px 16px;
     }
-    .card {
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .header {
       background: #fff;
       border-radius: 12px;
       padding: 24px 20px;
-      max-width: 680px;
-      margin: 0 auto;
       box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      margin-bottom: 14px;
     }
     .tag {
       display: inline-block;
@@ -47,46 +56,78 @@ export default function handler(req, res) {
       font-size: 11px;
       padding: 2px 8px;
       border-radius: 4px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     h1 {
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 700;
       line-height: 1.5;
-      margin-bottom: 16px;
       color: #111;
     }
+    .sub {
+      margin-top: 8px;
+      color: #666;
+      font-size: 13px;
+    }
+    .item {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      padding: 18px 16px;
+      margin-bottom: 12px;
+    }
+    .item h2 {
+      font-size: 16px;
+      line-height: 1.55;
+      color: #111;
+      margin-bottom: 10px;
+    }
     .core {
-      font-size: 15px;
+      font-size: 14px;
       line-height: 1.8;
       color: #444;
       white-space: pre-wrap;
-      word-break: break-all;
+      word-break: break-word;
+      margin-bottom: 12px;
     }
-    .link {
+    .url {
+      color: #666;
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-all;
+      margin-top: 8px;
+    }
+    .link-btn {
       display: inline-block;
-      margin-top: 20px;
-      color: #07c160;
-      font-size: 14px;
+      border-radius: 8px;
+      background: #07c160;
+      color: #fff;
+      font-size: 13px;
+      padding: 8px 12px;
       text-decoration: none;
     }
-    .link:active { opacity: 0.7; }
+    .link-btn:active {
+      opacity: 0.8;
+    }
     .empty {
       text-align: center;
       color: #999;
       font-size: 14px;
-      padding: 60px 0;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      padding: 60px 20px;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    ${title ? `
-    <span class="tag">每日情报</span>
-    <h1>${escapeHtml(title)}</h1>
-    <div class="core">${escapeHtml(core)}</div>
-    ${linkHtml}
-    ` : '<div class="empty">内容不存在或链接已失效</div>'}
+  <div class="container">
+    <div class="header">
+      <span class="tag">每日情报</span>
+      <h1>前端资讯详情</h1>
+      <div class="sub">点击按钮可直接跳转查看原文</div>
+    </div>
+    ${itemsHtml}
   </div>
 </body>
 </html>`;
@@ -103,4 +144,68 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function parseNewsItems(content) {
+  if (!content || !content.trim()) return [];
+
+  const items = [];
+  const blocks = content.trim().split(/(?=^标题[：:])/m);
+
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    let title = '';
+    let core = '';
+    let link = '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^标题[：:]/.test(trimmed)) {
+        title = trimmed.replace(/^标题[：:]\s*/, '');
+      } else if (/^核心[：:]/.test(trimmed)) {
+        core = trimmed.replace(/^核心[：:]\s*/, '');
+      } else if (/^链接[：:]/.test(trimmed)) {
+        link = trimmed.replace(/^链接[：:]\s*/, '');
+      }
+    }
+
+    if (title || core || link) {
+      items.push({ title, core, link });
+    }
+  }
+
+  return items;
+}
+
+function renderItems(items, content) {
+  if (items.length === 0) {
+    if (!content || !content.trim()) {
+      return '<div class="empty">内容不存在或链接已失效</div>';
+    }
+
+    return `
+      <div class="item">
+        <h2>资讯内容</h2>
+        <div class="core">${escapeHtml(content)}</div>
+      </div>
+    `;
+  }
+
+  return items.map((item, idx) => {
+    const title = item.title || `资讯 ${idx + 1}`;
+    const core = item.core || '暂无摘要';
+    const urlText = item.link ? escapeHtml(item.link) : '无原文链接';
+    const actionBtn = item.link
+      ? `<a class="link-btn" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">查看原文</a>`
+      : '';
+
+    return `
+      <div class="item">
+        <h2>${idx + 1}. ${escapeHtml(title)}</h2>
+        <div class="core">${escapeHtml(core)}</div>
+        ${actionBtn}
+        <div class="url">${urlText}</div>
+      </div>
+    `;
+  }).join('');
 }
