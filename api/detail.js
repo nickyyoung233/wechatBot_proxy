@@ -22,13 +22,14 @@ export default function handler(req, res) {
 
   const items = parseNewsItems(content);
   const itemsHtml = renderItems(items, content);
+  const pageTitle = items[0]?.title || '情报详情';
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title) || '情报详情'}</title>
+  <title>${escapeHtml(pageTitle)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
