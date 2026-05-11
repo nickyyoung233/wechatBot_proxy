@@ -1,5 +1,5 @@
 import { askCoze } from './coze.js';
-import { pushWeChatMessage } from './wechatPush.js';
+import { pushWeChatMessages } from './wechatPush.js';
 
 /**
  * Vercel Cron Job 入口
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
     const aiResponse = await askCoze(prompt, 'cron_scheduled_task');
 
     console.log(`[Cron] Pushing message to WeChat OpenID: ${openid}`);
-    await pushWeChatMessage(openid, aiResponse);
+    await pushWeChatMessages(openid, aiResponse);
 
     console.log('[Cron] Done');
     return res.status(200).json({ message: 'Pushed successfully' });

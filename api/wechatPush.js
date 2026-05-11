@@ -47,7 +47,23 @@ function truncateText(text, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function buildTemplatePayload(openid, content) {
+function parseNewsItems(content) {
+  const blocks = content.trim().split(/\n{2,}/);
+  const items = [];
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    let title = '', core = '', link = '';
+    for (const line of lines) {
+      if (/^标题[：:]/.test(line)) title = line.replace(/^标题[：:]\s*/, '').trim();
+      else if (/^核心[：:]/.test(line)) core = line.replace(/^核心[：:]\s*/, '').trim();
+      else if (/^链接[：:]/.test(line)) link = line.replace(/^链接[：:]\s*/, '').trim();
+    }
+    if (title) items.push({ title, core, link });
+  }
+  return items;
+}
+
+function buildTemplatePayload(openid, content, { itemUrl, titleOverride } = {}) {
   assertRequiredEnv(['WECHAT_TEMPLATE_ID'], 'wechat-template');
 
   const templateId = process.env.WECHAT_TEMPLATE_ID;
@@ -58,7 +74,7 @@ function buildTemplatePayload(openid, content) {
   const keyTime = process.env.WECHAT_TEMPLATE_KEY_TIME || 'keyword2';
   const keyRemark = process.env.WECHAT_TEMPLATE_KEY_REMARK || 'remark';
 
-  const title = process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
+  const title = titleOverride || process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
   const remark = process.env.WECHAT_TEMPLATE_REMARK || '点击查看详情，回复消息可继续对话。';
   const nowText = new Date().toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
@@ -66,7 +82,7 @@ function buildTemplatePayload(openid, content) {
   });
 
   const data = {
-    [keyContent]: { value: truncateText(content, 500) }
+    [keyContent]: { value: truncateText(content, 200) }
   };
 
   if (keyTitle) {
@@ -85,15 +101,16 @@ function buildTemplatePayload(openid, content) {
     data
   };
 
-  if (templateUrl) {
-    payload.url = templateUrl;
+  const finalUrl = itemUrl || templateUrl;
+  if (finalUrl) {
+    payload.url = finalUrl;
   }
 
   return payload;
 }
 
 /**
- * 通过微信公众号模板消息接口推送文本到指定用户
+ * 通过微信公众号模板消息接口推送文本到指定用户（单条）
  * @param {string} openid - 目标用户的 OpenID
  * @param {string} content - 消息内容
  * @returns {Promise<void>}
@@ -123,5 +140,64 @@ export async function pushWeChatMessage(openid, content) {
 
   if (response.data.errcode && response.data.errcode !== 0) {
     throw new Error(`WeChat template push error [${response.data.errcode}]: ${response.data.errmsg}`);
+  }
+}
+
+/**
+ * 将 AI 返回的多条新闻内容解析后逐条推送模板消息
+ * @param {string} openid - 目标用户的 OpenID
+ * @param {string} content - AI 返回的完整内容（含多条标题/核心/链接）
+ * @returns {Promise<void>}
+ */
+export async function pushWeChatMessages(openid, content) {
+  if (!openid) {
+    throw new Error('WECHAT_PUSH_OPENID not configured');
+  }
+
+  const normalizedContent = typeof content === 'string'
+    ? content.trim()
+    : String(content ?? '').trim();
+  if (!normalizedContent) {
+    throw new Error('Empty message content from Coze');
+  }
+
+  const items = parseNewsItems(normalizedContent);
+
+  // 解析失败时降级为单条发送
+  if (items.length === 0) {
+    return pushWeChatMessage(openid, normalizedContent);
+  }
+
+  const accessToken = await getAccessToken();
+  const baseTitle = process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
+  const total = items.length;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const msgContent = `标题：${item.title}\n核心：${item.core}`;
+    const titleOverride = `${baseTitle} (${i + 1}/${total})`;
+
+    const payload = buildTemplatePayload(openid, msgContent, {
+      itemUrl: item.link || undefined,
+      titleOverride
+    });
+
+    const response = await axios.post(
+      `${WECHAT_TEMPLATE_SEND_URL}?access_token=${accessToken}`,
+      payload,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000
+      }
+    );
+
+    if (response.data.errcode && response.data.errcode !== 0) {
+      throw new Error(`WeChat template push error [${response.data.errcode}]: ${response.data.errmsg} (item ${i + 1})`);
+    }
+
+    // 避免触发微信接口频率限制
+    if (i < items.length - 1) {
+      await new Promise(r => setTimeout(r, 500));
+    }
   }
 }
