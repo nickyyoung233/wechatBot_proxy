@@ -171,8 +171,9 @@ export async function pushWeChatMessages(openid, content) {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const msgContent = `标题：${item.title}\n核心：${item.core}`;
-    const titleOverride = `${baseTitle} (${i + 1}/${total})`;
+    // keyword1 只放核心描述，first 字段放序号+文章标题
+    const msgContent = item.core;
+    const titleOverride = `(${i + 1}/${total}) ${item.title}`;
 
     const payload = buildTemplatePayload(openid, msgContent, {
       remarkUrl: item.link || undefined,
