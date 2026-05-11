@@ -48,26 +48,27 @@ function truncateText(text, maxLength) {
 }
 
 function parseNewsItems(content) {
-  const blocks = content.trim().split(/\n{2,}/);
   const items = [];
+  // 以「标题：」为起始标记切割多条新闻，兼容单换行和双换行
+  const blocks = content.trim().split(/(?=^标题[：:])/m);
   for (const block of blocks) {
     const lines = block.split('\n');
     let title = '', core = '', link = '';
     for (const line of lines) {
-      if (/^标题[：:]/.test(line)) title = line.replace(/^标题[：:]\s*/, '').trim();
-      else if (/^核心[：:]/.test(line)) core = line.replace(/^核心[：:]\s*/, '').trim();
-      else if (/^链接[：:]/.test(line)) link = line.replace(/^链接[：:]\s*/, '').trim();
+      const trimmed = line.trim();
+      if (/^标题[：:]/.test(trimmed)) title = trimmed.replace(/^标题[：:]\s*/, '');
+      else if (/^核心[：:]/.test(trimmed)) core = trimmed.replace(/^核心[：:]\s*/, '');
+      else if (/^链接[：:]/.test(trimmed)) link = trimmed.replace(/^链接[：:]\s*/, '');
     }
     if (title) items.push({ title, core, link });
   }
   return items;
 }
 
-function buildTemplatePayload(openid, content, { itemUrl, titleOverride } = {}) {
+function buildTemplatePayload(openid, content, { remarkUrl, titleOverride } = {}) {
   assertRequiredEnv(['WECHAT_TEMPLATE_ID'], 'wechat-template');
 
   const templateId = process.env.WECHAT_TEMPLATE_ID;
-  const templateUrl = process.env.WECHAT_TEMPLATE_URL;
 
   const keyTitle = process.env.WECHAT_TEMPLATE_KEY_TITLE || 'first';
   const keyContent = process.env.WECHAT_TEMPLATE_KEY_CONTENT || 'keyword1';
@@ -75,7 +76,8 @@ function buildTemplatePayload(openid, content, { itemUrl, titleOverride } = {}) 
   const keyRemark = process.env.WECHAT_TEMPLATE_KEY_REMARK || 'remark';
 
   const title = titleOverride || process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
-  const remark = process.env.WECHAT_TEMPLATE_REMARK || '点击查看详情，回复消息可继续对话。';
+  const baseRemark = process.env.WECHAT_TEMPLATE_REMARK || '回复消息可继续对话。';
+  const remark = remarkUrl ? `${baseRemark}\n链接：${remarkUrl}` : baseRemark;
   const nowText = new Date().toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
     hour12: false
@@ -95,18 +97,11 @@ function buildTemplatePayload(openid, content, { itemUrl, titleOverride } = {}) 
     data[keyRemark] = { value: truncateText(remark, 200) };
   }
 
-  const payload = {
+  return {
     touser: openid,
     template_id: templateId,
     data
   };
-
-  const finalUrl = itemUrl || templateUrl;
-  if (finalUrl) {
-    payload.url = finalUrl;
-  }
-
-  return payload;
 }
 
 /**
@@ -162,9 +157,11 @@ export async function pushWeChatMessages(openid, content) {
   }
 
   const items = parseNewsItems(normalizedContent);
+  console.log(`[WechatPush] Parsed ${items.length} news items`);
 
   // 解析失败时降级为单条发送
   if (items.length === 0) {
+    console.warn('[WechatPush] No items parsed, falling back to single message');
     return pushWeChatMessage(openid, normalizedContent);
   }
 
@@ -178,7 +175,7 @@ export async function pushWeChatMessages(openid, content) {
     const titleOverride = `${baseTitle} (${i + 1}/${total})`;
 
     const payload = buildTemplatePayload(openid, msgContent, {
-      itemUrl: item.link || undefined,
+      remarkUrl: item.link || undefined,
       titleOverride
     });
 
