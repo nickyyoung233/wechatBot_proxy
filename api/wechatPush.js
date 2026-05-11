@@ -65,7 +65,23 @@ function parseNewsItems(content) {
   return items;
 }
 
-function buildTemplatePayload(openid, content, { remarkUrl, titleOverride } = {}) {
+function buildDetailUrl(item) {
+  const baseUrl = process.env.BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+  if (!baseUrl) return '';
+  try {
+    const encoded = Buffer.from(JSON.stringify({
+      title: item.title,
+      core: item.core,
+      link: item.link
+    })).toString('base64url');
+    return `${baseUrl}/api/detail?d=${encoded}`;
+  } catch {
+    return '';
+  }
+}
+
+function buildTemplatePayload(openid, content, { itemUrl, titleOverride } = {}) {
   assertRequiredEnv(['WECHAT_TEMPLATE_ID'], 'wechat-template');
 
   const templateId = process.env.WECHAT_TEMPLATE_ID;
@@ -76,8 +92,7 @@ function buildTemplatePayload(openid, content, { remarkUrl, titleOverride } = {}
   const keyRemark = process.env.WECHAT_TEMPLATE_KEY_REMARK || 'remark';
 
   const title = titleOverride || process.env.WECHAT_TEMPLATE_TITLE || '每日情报推送';
-  const baseRemark = process.env.WECHAT_TEMPLATE_REMARK || '回复消息可继续对话。';
-  const remark = remarkUrl ? `${baseRemark}\n链接：${remarkUrl}` : baseRemark;
+  const remark = process.env.WECHAT_TEMPLATE_REMARK || '点击查看完整详情';
   const nowText = new Date().toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
     hour12: false
@@ -94,14 +109,20 @@ function buildTemplatePayload(openid, content, { remarkUrl, titleOverride } = {}
     data[keyTime] = { value: nowText };
   }
   if (keyRemark) {
-    data[keyRemark] = { value: truncateText(remark, 200) };
+    data[keyRemark] = { value: remark };
   }
 
-  return {
+  const payload = {
     touser: openid,
     template_id: templateId,
     data
   };
+
+  if (itemUrl) {
+    payload.url = itemUrl;
+  }
+
+  return payload;
 }
 
 /**
@@ -174,9 +195,10 @@ export async function pushWeChatMessages(openid, content) {
     // keyword1 只放核心描述，first 字段放序号+文章标题
     const msgContent = item.core;
     const titleOverride = `(${i + 1}/${total}) ${item.title}`;
+    const detailUrl = buildDetailUrl(item);
 
     const payload = buildTemplatePayload(openid, msgContent, {
-      remarkUrl: item.link || undefined,
+      itemUrl: detailUrl || undefined,
       titleOverride
     });
 
