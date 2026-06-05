@@ -1,6 +1,12 @@
 import { askCoze } from './coze.js';
 import { pushWeChatMessages } from './wechatPush.js';
 
+function getRequestUrl(req) {
+  const host = req.headers?.host || process.env.VERCEL_URL || 'localhost';
+  const baseUrl = host.startsWith('http') ? host : `https://${host}`;
+  return new URL(req.url || '/', baseUrl);
+}
+
 /**
  * Vercel Cron Job 入口
  *
@@ -11,7 +17,9 @@ import { pushWeChatMessages } from './wechatPush.js';
  * 本地手动触发：GET /api/cron?force=1
  */
 export default async function handler(req, res) {
-  const isForced = req.query.force === '1';
+  const requestUrl = getRequestUrl(req);
+  const searchParams = requestUrl.searchParams;
+  const isForced = searchParams.get('force') === '1';
   const nowIso = new Date().toISOString();
   const userAgent = req.headers['user-agent'] || '';
   const vercelId = req.headers['x-vercel-id'] || '';
@@ -27,7 +35,7 @@ export default async function handler(req, res) {
     source,
     isForced,
     path: req.url,
-    query: req.query,
+    query: Object.fromEntries(searchParams.entries()),
     hasAuthHeader,
     userAgent,
     vercelId

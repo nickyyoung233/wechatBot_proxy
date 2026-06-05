@@ -1,6 +1,12 @@
 import { verifyWeChat, parseWeChatMessage, createWeChatReply } from './wechat.js';
 import { askCoze } from './coze.js';
 
+function getRequestUrl(req) {
+  const host = req.headers?.host || process.env.VERCEL_URL || 'localhost';
+  const baseUrl = host.startsWith('http') ? host : `https://${host}`;
+  return new URL(req.url || '/', baseUrl);
+}
+
 /**
  * 从请求流读取原始 body（用于 text/xml 场景兜底）
  * @param {import('http').IncomingMessage} req
@@ -19,7 +25,11 @@ function readRawBody(req) {
  * 处理GET请求 - WeChat服务器验证
  */
 async function handleGet(req) {
-  const { signature, timestamp, nonce, echostr } = req.query;
+  const searchParams = getRequestUrl(req).searchParams;
+  const signature = searchParams.get('signature') || '';
+  const timestamp = searchParams.get('timestamp') || '';
+  const nonce = searchParams.get('nonce') || '';
+  const echostr = searchParams.get('echostr') || '';
 
   if (!signature || !timestamp || !nonce) {
     return {
@@ -46,7 +56,10 @@ async function handleGet(req) {
  */
 async function handlePost(req) {
   try {
-    const { signature, timestamp, nonce } = req.query;
+    const searchParams = getRequestUrl(req).searchParams;
+    const signature = searchParams.get('signature') || '';
+    const timestamp = searchParams.get('timestamp') || '';
+    const nonce = searchParams.get('nonce') || '';
 
     if (!verifyWeChat(signature, timestamp, nonce)) {
       return {

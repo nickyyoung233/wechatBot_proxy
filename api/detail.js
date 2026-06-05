@@ -1,5 +1,8 @@
 export default function handler(req, res) {
-  const raw = req.query.d || '';
+  const host = req.headers?.host || process.env.VERCEL_URL || 'localhost';
+  const baseUrl = host.startsWith('http') ? host : `https://${host}`;
+  const searchParams = new URL(req.url || '/', baseUrl).searchParams;
+  const raw = searchParams.get('d') || '';
   let content = '';
 
   if (raw) {
